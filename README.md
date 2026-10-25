@@ -1,7 +1,7 @@
-# Release Manager
+# Release Manager 
 
-[Lire la documentation en français](README.fr.md)
-[Lire la documentation de l'architecture](https://github.com/Y0UBdev/Modular-Monolith-Django-Architecture/blob/main/README.md)
+- [Lire la documentation en français](README.fr.md)
+- [Lire la documentation de l'architecture](https://github.com/Y0UBdev/Modular-Monolith-Django-Architecture/blob/main/README.md)
 
 ## 1. What you're building
 
