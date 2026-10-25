@@ -1,0 +1,91 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+virtualenv/
+
+# Python packaging and build artifacts
+build/
+dist/
+eggs/
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+share/python-wheels/
+
+# Django local data and generated files
+db.sqlite3
+db.sqlite3-*
+*.sqlite3
+*.sqlite3-*
+/media/
+/staticfiles/
+local_settings.py
+local_settings_*.py
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Logs and runtime data
+*.log
+logs/
+*.pid
+
+# Test, coverage, and analysis caches
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+pytestdebug.log
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.cache/
+
+# Type-checker and test-runner state
+.dmypy.json
+dmypy.json
+
+# Django translation/build artifacts
+*.pot
+
+# Frontend dependencies and build outputs (if used)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/dist/
+/build/
+
+# Editors and IDEs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
