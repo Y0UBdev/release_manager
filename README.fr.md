@@ -1,749 +1,195 @@
-# Architecture Django Monolithe Modulaire
+# Release_manager
 
-Template de démarrage pour développer des applications web avec **Django, Django REST Framework, React et TypeScript**.
+## 1. Ce que tu construis
 
-Ce template fournit une structure organisée, modulaire et évolutive, conçue pour séparer les responsabilités du backend, du frontend, de la logique métier et de l'accès aux données.
+Une application web interne où des utilisateurs avec des **rôles différents** préparent des **releases** (des paquets de scripts SQL ordonnés) destinées à une **base cible**, et les font passer par un **workflow d'approbation**.
 
-L'objectif est de pouvoir démarrer différents projets sans devoir redéfinir leur architecture à chaque fois.
+À la fin de la phase 1, l'application ne sait **pas encore exécuter** les scripts (c'est la phase 3). Elle sait en revanche :
 
-## Table des matières
+- stocker des environnements, des bases cibles, des releases et leurs scripts ;
+- faire respecter un workflow (brouillon → soumise → approuvée) ;
+- restreindre chaque action selon le rôle ;
+- exposer les releases par une API REST.
 
-- [Présentation](#présentation)
-- [Architecture](#architecture)
-- [Structure du projet](#structure-du-projet)
-- [Responsabilités des couches](#responsabilités-des-couches)
-- [Configuration et installation](#configuration-et-installation)
-- [Utilisation du template GitHub](#utilisation-du-template-github)
-- [Cloner le dépôt](#cloner-le-dépôt)
-- [Créer une application Django](#créer-une-application-django)
-- [Conventions de développement](#conventions-de-développement)
-- [Tests](#tests)
-- [Bonnes pratiques](#bonnes-pratiques)
+C'est le squelette sur lequel tout le reste se branchera.
 
----
+## 2. Choix techniques de départ
 
-## Présentation
+| Élément | Choix | Pourquoi |
+|---|---|---|
+| Python | 3.12 ou plus récent, en environnement virtuel (`venv`) | Standard |
+| Django | Version LTS la plus récente (5.2) | Stabilité, c'est ce qu'une entreprise choisit |
+| API | Django REST Framework | Cité dans l'annonce (REST API) |
+| Base pour l'instant | SQLite | Zéro installation. Oracle arrive en phase 2 |
+| Configuration | Variables d'environnement (`django-environ`) | Habitude à prendre dès maintenant : aucun secret dans le code |
+| Tests | `pytest-django` ou `TestCase` de Django | Un outil qui déploie des scripts SQL doit être testé |
+| Git | Dépôt dès le premier jour, `.gitignore`, commits clairs | Git figure dans la liste de l'annonce |
 
-Ce dépôt constitue une base réutilisable pour développer des applications web, notamment :
+**Attention :** SQLite sert seulement de support à *ton application*. La base Oracle sera la **cible** des scripts, un rôle très différent. Cette distinction est importante à comprendre.
 
-- Applications de gestion et outils internes.
-- API REST.
-- Applications web avec une interface React.
-- Applications métier avec plusieurs modules fonctionnels.
-- Projets nécessitant une séparation claire entre la présentation, la logique métier et l'accès aux données.
+## 3. Structure du projet
 
-### Technologies utilisées
-
-| Technologie | Rôle |
-|---|---|
-| Python | Langage du backend |
-| Django | Framework backend et ORM |
-| Django REST Framework | Création d'API REST |
-| React | Bibliothèque frontend |
-| TypeScript | Typage statique du frontend |
-| Vite | Serveur de développement et outil de build |
-| Git | Gestion de versions |
-
-## Architecture
-
-### Nom de l'architecture
-
-**Modular Monolith — Architecture en couches**
-
-Le projet adopte une architecture monolithique modulaire : le backend Django est une application unique, organisée en modules métier distincts.
-
-Le code est séparé selon ses responsabilités afin de limiter le couplage et de faciliter les évolutions.
-
-Cette organisation s'inspire de principes de séparation des responsabilités présents dans les architectures en couches et la Clean Architecture, sans imposer une séparation stricte entre domaine, application et infrastructure.
-
-### Principes fondamentaux
-
-1. **Séparation des responsabilités** : chaque fichier et chaque module ont un rôle identifiable.
-2. **Modularité** : chaque application Django regroupe une fonctionnalité métier cohérente.
-3. **Centralisation de la configuration** : les paramètres sont regroupés dans `config/`.
-4. **Séparation du frontend et du backend** : React et Django disposent de leurs propres dépendances et commandes.
-5. **Évolutivité** : les couches supplémentaires sont introduites lorsque leur complexité le justifie.
-
-### Flux général d'une requête API
-
-```text
-Frontend React
-      |
-      | Requête HTTP / JSON
-      v
-config/urls.py
-      |
-      v
-apps/<module>/urls.py
-      |
-      v
-views.py
-      |
-      v
-serializers.py
-      |
-      v
-services.py -------- queries.py
-      |                   |
-      v                   v
-   models.py          Django ORM
-      |                   |
-      +---------+---------+
-                |
-                v
-           Base de données
 ```
-
-Ce schéma représente un flux possible, et non une obligation pour chaque requête. Une vue peut appeler directement un serializer ou une query lorsqu'aucun service métier n'est nécessaire.
-
----
-
-## Structure du projet
-
-```text
-project-root/
+release_manager/
+├── manage.py
+├── config/                  # settings, urls, wsgi
+├── releases/                # le cœur métier
+│   ├── models.py
+│   ├── services.py          # logique de workflow (transitions)
+│   ├── permissions.py       # noms des permissions et des groupes
+│   ├── views.py
+│   ├── forms.py
+│   ├── admin.py
+│   ├── api/
+│   │   ├── serializers.py
+│   │   └── views.py
+│   ├── templates/releases/
+│   └── tests/
 ├── .env.example
 ├── .gitignore
-├── manage.py
-├── README.md
-│
-├── apps/
-│   └── <app_name>/
-│       ├── __init__.py
-│       ├── apps.py
-│       ├── admin.py
-│       ├── models.py
-│       ├── queries.py
-│       ├── serializers.py
-│       ├── services.py
-│       ├── urls.py
-│       ├── views.py
-│       ├── migrations/
-│       └── tests/
-│           ├── __init__.py
-│           ├── test_models.py
-│           ├── test_queries.py
-│           └── test_services.py
-│
-├── common/
-│   └── __init__.py
-│
-├── config/
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── settings/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── development.py
-│   │   ├── production.py
-│   │   └── test.py
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
-│
-├── docs/
-├── requirements/
-│   ├── base.txt
-│   ├── development.txt
-│   └── production.txt
-│
-├── scripts/
-│
-└── web/
-    ├── .gitignore
-    ├── eslint.config.js
-    ├── index.html
-    ├── package.json
-    ├── package-lock.json
-    ├── tsconfig.json
-    ├── tsconfig.app.json
-    ├── tsconfig.node.json
-    ├── vite.config.ts
-    └── src/
-        ├── main.tsx
-        ├── assets/
-        │   ├── images/
-        │   └── styles/
-        │       └── global.css
-        ├── components/
-        ├── hooks/
-        └── types/
+├── requirements.txt
+└── README.md
 ```
 
-> Remarque : cette arborescence est un modèle de référence. Si `config/settings/` est utilisé comme package Python, il ne peut pas coexister avec un fichier `config/settings.py` sur le même système de fichiers. Il faut donc conserver une seule de ces deux formes. Dans ce template, la configuration par environnement est organisée dans `config/settings/`.
+Une seule application métier suffit pour l'instant. Tu en ajouteras une pour l'audit en phase 6.
 
-De même, `apps/<app_name>/apps.py` doit être ajouté s'il est absent, car il permet de déclarer la configuration de l'application Django.
+## 4. Les modèles de données
 
----
+### `Environnement`
+| Champ | Type | Remarque |
+|---|---|---|
+| `code` | CharField, unique | `TEST`, `ACC`, `PROD` |
+| `nom` | CharField | |
+| `approbation_requise` | BooleanField | Vrai pour la production |
+| `ordre` | PositiveInteger | Pour trier : test, puis acceptation, puis production |
 
-## Responsabilités des couches
+### `BaseCible`
+| Champ | Type | Remarque |
+|---|---|---|
+| `nom` | CharField | Nom lisible |
+| `environnement` | ForeignKey | |
+| `type_sgbd` | CharField avec choix | Pour l'instant une seule valeur : `ORACLE`. Ce champ prépare l'ouverture à d'autres SGBD |
+| `dsn` | CharField | Adresse / nom de service |
+| `chemin_secret` | CharField | **Le chemin du secret dans Vault, jamais le mot de passe.** Prépare la phase 5 |
+| `active` | BooleanField | |
 
-### 1. `apps/` — Applications métier
+### `Release`
+| Champ | Type | Remarque |
+|---|---|---|
+| `titre` | CharField | |
+| `description` | TextField | |
+| `base_cible` | ForeignKey | |
+| `auteur` | ForeignKey vers `User` | |
+| `statut` | CharField avec choix | Voir workflow ci-dessous |
+| `approuvee_par` | ForeignKey vers `User`, nullable | |
+| `approuvee_le` | DateTimeField, nullable | |
+| `planifiee_le` | DateTimeField, nullable | Servira en phase 4 |
+| `cree_le` / `modifie_le` | DateTimeField automatiques | |
 
-Ce dossier contient les modules fonctionnels de l'application.
+### `Script`
+| Champ | Type | Remarque |
+|---|---|---|
+| `release` | ForeignKey | |
+| `ordre` | PositiveInteger | Unique par release (contrainte `unique_together` ou `UniqueConstraint`) |
+| `nom` | CharField | Ex. `001_create_table_facture.sql` |
+| `contenu` | TextField | Le SQL |
+| `contenu_retour_arriere` | TextField, vide autorisé | Le script d'annulation, écrit à l'avance |
+| `hash_contenu` | CharField | SHA-256 du contenu, calculé à l'enregistrement. Sert à prouver plus tard ce qui a été exécuté |
 
-Exemples :
+Le modèle `Execution` (statut, début, fin, sortie, erreur par script) viendra en phase 3. Ne le crée pas maintenant.
 
-- `users/` : gestion des utilisateurs et profils.
-- `projects/` : gestion des projets.
-- `tasks/` : gestion des tâches.
-- `documents/` : gestion des documents.
+## 5. Le workflow à implémenter
 
-Chaque application regroupe les éléments nécessaires à sa fonctionnalité : modèles, vues, routes, validation, logique métier et tests.
+**Statuts :** `BROUILLON` → `SOUMISE` → `APPROUVEE`, avec deux sorties possibles : `REFUSEE` et `ANNULEE`. Les statuts suivants (`PLANIFIEE`, `EN_COURS`, `TERMINEE`, `ECHEC`) seront ajoutés dans les phases 3 et 4. Déclare-les dès maintenant dans les choix si tu veux, mais n'implémente pas leurs transitions.
 
-Une application doit représenter une responsabilité fonctionnelle cohérente, et non une couche technique commune à tout le projet.
+| Action | Depuis | Vers | Qui peut le faire |
+|---|---|---|---|
+| Soumettre | Brouillon | Soumise | L'auteur de la release |
+| Approuver | Soumise | Approuvée | Un approbateur, **différent de l'auteur** |
+| Refuser | Soumise | Refusée | Un approbateur |
+| Annuler | Brouillon, Soumise | Annulée | L'auteur |
+| Modifier les scripts | Brouillon uniquement | , | L'auteur |
 
-### 2. `models.py` — Modèles de données
+**Règles métier à coder et à tester :**
 
-Définit les modèles Django, leurs champs, leurs relations et leurs comportements liés aux données.
+1. **Séparation des tâches** : personne n'approuve sa propre release. C'est une règle d'audit classique, et elle fera très bien en entretien.
+2. **Une release soumise ou approuvée n'est plus modifiable.** Sinon on pourrait faire approuver un script puis en changer le contenu.
+3. **Une release sans script ne peut pas être soumise.**
+4. **Les transitions invalides lèvent une erreur claire** (par exemple approuver un brouillon).
+5. Les environnements avec `approbation_requise = False` pourraient permettre un raccourci : décide-le et documente-le.
 
-Responsabilités :
+**Bonne pratique à adopter :** mets la logique dans des fonctions de `services.py` (par exemple `soumettre(release, utilisateur)`), pas dans les vues. Les vues, l'admin et l'API appelleront les mêmes fonctions. C'est du *Single Responsibility* concret, et c'est facile à tester.
 
-- Définir la structure des données.
-- Déclarer les relations entre les entités.
-- Définir les contraintes et validations liées aux modèles.
-- Fournir les objets utilisés par l'ORM Django.
+## 6. Rôles et permissions
 
-Les modifications de modèles peuvent nécessiter la création de migrations.
+Quatre groupes Django, créés par une migration de données ou une commande de gestion :
 
-### 3. `queries.py` — Lecture des données
-
-Regroupe les opérations de lecture réutilisables lorsque leur centralisation est utile.
-
-Exemples :
-
-- Rechercher des projets.
-- Récupérer les projets d'un utilisateur.
-- Filtrer des éléments selon leur statut.
-- Effectuer des lectures avec jointures, annotations ou agrégations.
-
-Les queries utilisent généralement l'ORM Django.
-
-Elles ne doivent pas devenir un simple intermédiaire obligatoire pour chaque accès à la base de données. Une requête simple peut rester directement dans une vue ou un service si cela demeure clair.
-
-### 4. `services.py` — Logique métier
-
-Contient les opérations métier qui coordonnent plusieurs étapes ou objets.
-
-Exemples :
-
-- Créer un projet en vérifiant certaines conditions.
-- Affecter une tâche à un utilisateur après vérification des permissions métier.
-- Modifier plusieurs objets au cours d'une même opération.
-- Orchestrer une transaction ou une intégration externe.
-
-Les services ne doivent pas contenir de logique HTTP spécifique, comme la construction d'une réponse JSON ou la lecture directe des paramètres d'une requête.
-
-Une opération CRUD simple ne nécessite pas obligatoirement un service dédié.
-
-### 5. `serializers.py` — Sérialisation et validation API
-
-Utilisé principalement avec Django REST Framework.
-
-Responsabilités :
-
-- Convertir les objets Django en données exploitables par le frontend.
-- Valider les données reçues depuis les requêtes API.
-- Contrôler les champs exposés par l'API.
-- Transformer les données entrantes en valeurs validées.
-
-Les serializers ne doivent pas remplacer la couche de services pour les workflows métier complexes.
-
-### 6. `views.py` — Endpoints et traitement HTTP
-
-Les vues constituent le point d'entrée des requêtes HTTP dans l'application.
-
-Responsabilités :
-
-- Recevoir les requêtes.
-- Utiliser les serializers pour valider les données lorsque nécessaire.
-- Appeler les services ou queries appropriés.
-- Retourner une réponse HTTP, HTML ou JSON selon le type de vue.
-
-Avec Django REST Framework, les vues peuvent être basées sur `APIView`, des vues génériques ou des `ViewSet`.
-
-### 7. `urls.py` — Routage
-
-Associe les chemins HTTP aux vues correspondantes.
-
-Chaque application possède son propre `urls.py` pour ses routes métier. Le fichier `config/urls.py` rassemble les routes principales et inclut celles des applications.
-
-Exemple de routes :
-
-```text
-/api/projects/
-/api/projects/42/
-/api/users/
-```
-
-Le routage ne contient pas la logique métier : il détermine quelle vue doit traiter la requête.
-
-### 8. `admin.py` — Administration Django
-
-Configure l'affichage et la gestion des modèles dans l'interface d'administration Django.
-
-Il permet notamment de rechercher, filtrer, consulter et modifier les données depuis l'administration, selon les permissions accordées.
-
-### 9. `migrations/` — Évolution du schéma de base de données
-
-Contient les migrations générées par Django pour suivre les changements apportés aux modèles.
-
-Commandes usuelles :
-
-```bash
-python manage.py makemigrations
-python manage.py migrate
-```
-
-Les migrations doivent être versionnées dans Git.
-
-### 10. `tests/` — Tests automatisés
-
-Contient les tests de l'application.
-
-Convention proposée :
-
-- `test_models.py` : comportement des modèles et contraintes.
-- `test_queries.py` : résultats des lectures et filtres.
-- `test_services.py` : règles métier et opérations.
-- `test_views.py` : endpoints, réponses HTTP et permissions, si nécessaire.
-
-Les fichiers de tests doivent suivre les responsabilités réelles de l'application. Il n'est pas nécessaire de conserver des fichiers de tests vides.
-
----
-
-## Configuration globale
-
-### `config/`
-
-Contient la configuration centrale du projet Django.
-
-#### `config/settings/`
-
-Organise les paramètres selon l'environnement d'exécution.
-
-| Fichier | Responsabilité |
+| Groupe | Peut |
 |---|---|
-| `base.py` | Paramètres communs à tous les environnements |
-| `development.py` | Paramètres de développement local |
-| `production.py` | Paramètres de production |
-| `test.py` | Paramètres adaptés aux tests |
-| `__init__.py` | Initialisation éventuelle du package |
-
-Le module de paramètres actif est choisi à l'aide de la variable `DJANGO_SETTINGS_MODULE`.
-
-Exemples :
-
-```text
-config.settings.development
-config.settings.production
-config.settings.test
-```
-
-La configuration effective doit être cohérente avec la manière dont `manage.py`, ASGI et WSGI sélectionnent les paramètres.
-
-#### `config/urls.py`
-
-Déclare les routes globales du projet, notamment l'administration Django et les préfixes des différentes applications.
-
-#### `config/asgi.py`
-
-Expose l'application Django au moyen de l'interface ASGI, utilisée par les serveurs compatibles et certaines applications asynchrones.
-
-#### `config/wsgi.py`
-
-Expose l'application Django au moyen de l'interface WSGI, utilisée par de nombreux serveurs de déploiement traditionnels.
-
-### `manage.py`
-
-Point d'entrée des commandes d'administration Django.
-
-Exemples :
-
-```bash
-python manage.py runserver
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py test
-```
-
-### `.env.example`
-
-Documente les variables d'environnement nécessaires au fonctionnement du projet.
-
-Exemple :
-
-```dotenv
-DJANGO_SECRET_KEY=replace-me
-DJANGO_DEBUG=True
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
-```
-
-Ce fichier est un modèle : les noms doivent correspondre à ceux réellement utilisés par les paramètres Django.
-
-Le fichier `.env` local doit contenir les valeurs effectives et ne doit pas être commité. Il faut également prévoir un mécanisme de chargement des variables d'environnement si le projet en nécessite un.
-
-### `.gitignore`
-
-Exclut du dépôt les fichiers générés, les environnements virtuels, les secrets, les caches et les dépendances installées localement.
-
-### `common/` — Code transversal
-
-Réservé aux éléments réellement partagés par plusieurs applications.
-
-Exemples éventuels :
-
-- Exceptions communes.
-- Utilitaires génériques.
-- Constantes transversales.
-
-Éviter d'y placer du code uniquement parce qu'il ne trouve pas de place ailleurs. Une fonctionnalité propre à une application doit rester dans cette application.
-
-### `docs/` — Documentation technique
-
-Contient la documentation complémentaire du projet.
-
-Exemples :
-
-- Décisions d'architecture.
-- Documentation de l'API.
-- Instructions de déploiement.
-- Procédures de développement.
-- Schémas techniques.
-
-### `requirements/` — Dépendances Python
-
-Les dépendances sont organisées par environnement.
-
-| Fichier | Contenu attendu |
-|---|---|
-| `base.txt` | Dépendances communes du backend |
-| `development.txt` | Outils supplémentaires pour le développement |
-| `production.txt` | Dépendances propres au déploiement, si nécessaire |
-
-Les fichiers spécifiques peuvent référencer `base.txt` avec une directive `-r base.txt`.
-
-### `scripts/` — Scripts auxiliaires
-
-Réservé aux scripts d'automatisation, d'importation de données ou de maintenance ponctuelle.
-
-Les opérations récurrentes qui doivent utiliser le contexte Django sont généralement mieux placées dans des commandes personnalisées `management/commands/`.
-
----
-
-## Frontend React
-
-Le dossier `web/` constitue le projet frontend. Il dispose de ses propres dépendances, de son propre environnement de développement et de sa propre commande de build.
-
-### `web/src/main.tsx`
-
-Point d'entrée de l'application React. Il initialise l'interface et monte le composant racine dans le document HTML.
-
-### `web/src/assets/`
-
-Contient les ressources statiques utilisées par le frontend.
-
-- `images/` : images, illustrations et autres ressources graphiques.
-- `styles/global.css` : styles globaux de l'application.
-
-### `web/src/components/`
-
-Contient les composants d'interface réutilisables, par exemple les boutons, modales, champs de formulaire et éléments de navigation.
-
-Les composants fortement liés à une fonctionnalité peuvent être regroupés dans un dossier `features/` si le frontend devient plus important.
-
-### `web/src/hooks/`
-
-Contient les hooks React personnalisés, destinés à encapsuler une logique réutilisable liée à React.
-
-### `web/src/types/`
-
-Contient les types TypeScript partagés dans le frontend, lorsque leur réutilisation le justifie.
-
-### `web/public/`
-
-Contient les ressources statiques servies telles quelles par Vite, sans traitement habituel par le graphe d'importation.
-
-### `web/index.html`
-
-Document HTML d'entrée utilisé par Vite pour démarrer l'application frontend.
-
-### `web/package.json`
-
-Déclare les dépendances JavaScript, les métadonnées et les scripts du projet.
-
-### `web/package-lock.json`
-
-Verrouille les versions résolues des dépendances npm pour rendre les installations reproductibles.
-
-### `web/vite.config.ts`
-
-Configure Vite, notamment le serveur de développement, les plugins et la compilation frontend.
-
-### `web/tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`
-
-Configurent TypeScript pour le projet et ses différents contextes de compilation.
-
-### `web/eslint.config.js`
-
-Configure ESLint pour détecter les problèmes et appliquer les conventions de qualité du code.
-
-### `web/.gitignore`
-
-Définit les exclusions spécifiques au frontend, en complément du `.gitignore` racine.
-
----
-
-## Installation et configuration
-
-### Prérequis
-
-Installer les outils suivants :
-
-- Python dans une version compatible avec les dépendances du projet.
-- Node.js dans une version compatible avec Vite et les dépendances React.
-- npm, fourni avec Node.js.
-- Git.
-
-### 1. Cloner le dépôt
-
-```bash
-git clone <REPOSITORY_URL>
-cd <REPOSITORY_DIRECTORY>
-```
-
-### 2. Créer un environnement Python
-
-Sous Windows PowerShell :
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Sous Linux ou macOS :
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Installer les dépendances backend
-
-Pour le développement :
-
-```bash
-python -m pip install -r requirements/development.txt
-```
-
-Cette commande suppose que `development.txt` référence les dépendances communes de `base.txt`.
-
-### 4. Configurer les variables d'environnement
-
-Copier `.env.example` vers `.env`, puis renseigner les valeurs nécessaires.
-
-Sous PowerShell :
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Vérifier que Django charge effectivement ces variables selon la configuration du projet.
-
-Ne jamais publier de clé secrète ou de mot de passe dans Git.
-
-### 5. Préparer la base de données
-
-```bash
-python manage.py migrate
-```
-
-Créer un compte administrateur si nécessaire :
-
-```bash
-python manage.py createsuperuser
-```
-
-### 6. Démarrer le backend
-
-```bash
-python manage.py runserver
-```
-
-Par défaut, le serveur de développement Django est accessible à l'adresse :
-
-`http://127.0.0.1:8000/`
-
-### 7. Installer les dépendances frontend
-
-Dans un autre terminal :
-
-```bash
-cd web
-npm ci
-```
-
-### 8. Démarrer React
-
-```bash
-npm run dev
-```
-
-Vite affiche l'adresse locale à laquelle le frontend est accessible, généralement :
-
-`http://localhost:5173/`
-
-Le frontend doit être configuré pour communiquer avec l'API Django. En développement, cela peut passer par une URL d'API explicite ou par un proxy Vite. Si les deux serveurs utilisent des origines différentes, il faut également configurer correctement CORS côté Django.
-
----
-
-## Utilisation du template GitHub
-
-Si le dépôt est configuré comme un **GitHub Template Repository**, il est possible de créer directement un nouveau dépôt à partir de cette structure.
-
-### Méthode 1 — Utiliser le bouton « Use this template »
-
-1. Ouvrir le dépôt du template sur GitHub.
-2. Cliquer sur **Use this template**.
-3. Sélectionner **Create a new repository**.
-4. Choisir le propriétaire, le nom et la visibilité du nouveau dépôt.
-5. Créer le dépôt.
-6. Cloner le nouveau dépôt sur la machine locale.
-
-```bash
-git clone <NEW_REPOSITORY_URL>
-cd <NEW_REPOSITORY_DIRECTORY>
-```
-
-Cette méthode crée un nouveau dépôt basé sur le contenu du template, sans reprendre son historique Git comme un fork classique.
-
-### Méthode 2 — Cloner directement le dépôt
-
-```bash
-git clone <TEMPLATE_REPOSITORY_URL>
-cd <TEMPLATE_REPOSITORY_DIRECTORY>
-```
-
-Cette méthode est adaptée pour tester ou développer le template lui-même.
-
-Si le but est de démarrer un projet indépendant, il faut configurer un nouveau dépôt distant ou créer le projet via la fonctionnalité de template GitHub, plutôt que de continuer à pousser les changements vers le dépôt source.
-
-### Adapter le template au nouveau projet
-
-Après la création du dépôt :
-
-1. Renommer le dossier `apps/<app_name>/` pour lui donner un nom métier pertinent.
-2. Adapter la configuration Django au projet.
-3. Ajouter les dépendances réellement nécessaires.
-4. Configurer les variables d'environnement.
-5. Créer les applications métier nécessaires.
-6. Configurer les URL globales et les routes des applications.
-7. Adapter le frontend React et l'URL de l'API.
-8. Mettre à jour ce README avec les informations spécifiques au projet.
-
----
-
-## Créer une application Django
-
-Chaque fonctionnalité métier doit être représentée par une application Django lorsque cela apporte une séparation cohérente.
-
-Exemple : créer une application `projects`.
-
-Depuis la racine du dépôt :
-
-```bash
-python manage.py startapp projects apps/projects
-```
-
-Vérifier que la commande a bien généré les fichiers dans le dossier cible. Si la version de Django utilisée ne prend pas en charge cette forme de commande, créer l'application dans un dossier temporaire puis déplacer ses fichiers.
-
-La structure attendue est :
-
-```text
-apps/
-└── projects/
-    ├── __init__.py
-    ├── apps.py
-    ├── admin.py
-    ├── models.py
-    ├── views.py
-    ├── urls.py
-    ├── migrations/
-    └── tests/
-```
-
-Ajouter ensuite l'application dans `INSTALLED_APPS`, avec un chemin Python cohérent avec l'organisation du projet. Par exemple, `apps.projects` peut être utilisé si le package racine `apps` est importable et si `apps.py` est correctement configuré.
-
-Ajouter les fichiers `queries.py`, `services.py` et `serializers.py` lorsque les besoins de l'application le justifient.
-
-Enfin, enregistrer ses routes dans `config/urls.py` en utilisant `include()`.
-
----
-
-## Conventions de développement
-
-### Séparation des responsabilités
-
-- Les vues gèrent les requêtes et réponses HTTP.
-- Les serializers valident et représentent les données de l'API.
-- Les services orchestrent les opérations métier.
-- Les queries centralisent les lectures réutilisables.
-- Les modèles Django représentent les données et leurs relations.
-- La configuration globale reste dans `config/`.
-
-### Ne pas multiplier les couches inutilement
-
-Les fichiers `services.py`, `queries.py` et `serializers.py` sont des conventions d'organisation, pas des obligations pour chaque application.
-
-Une opération simple peut utiliser directement l'ORM. Introduire une abstraction supplémentaire uniquement si elle améliore réellement la lisibilité, la réutilisation, les tests ou le découplage.
-
-### Variables d'environnement
-
-- Ne jamais commiter le fichier `.env`.
-- Fournir un `.env.example` documenté.
-- Ne pas utiliser `DEBUG=True` en production.
-- Utiliser une clé secrète robuste et des hôtes autorisés correctement configurés.
-
-### Frontend et backend
-
-- Garder les dépendances Python dans les fichiers `requirements/`.
-- Garder les dépendances JavaScript dans `web/package.json`.
-- Utiliser `npm ci` pour les installations reproductibles en CI.
-- Centraliser la configuration de l'URL de l'API côté frontend plutôt que de la disperser dans les composants.
-
----
-
-## Tests
-
-Exécuter les tests Django :
-
-```bash
-python manage.py test
-```
-
-Exécuter les tests d'une application particulière :
-
-```bash
-python manage.py test apps.projects
-```
-
-La suite de tests peut être complétée avec des tests d'intégration API et des tests frontend selon les besoins du projet.
-
-Pour le frontend, les commandes disponibles dépendent des scripts définis dans `web/package.json`.
-
----
-
-## Bonnes pratiques
-
-- Privilégier des applications métier cohérentes et faiblement couplées.
-- Conserver les migrations dans le dépôt.
-- Documenter les variables d'environnement.
-- Ne pas placer les règles métier dans les vues.
-- Éviter de transformer `common/` en dossier fourre-tout.
-- Réserver `infrastructure/` aux intégrations techniques ou abstractions réellement nécessaires.
-- Ajouter une documentation dans `docs/` lorsque les choix d'architecture ou les procédures deviennent complexes.
-- Adapter la structure aux besoins réels plutôt que de créer tous les dossiers à l'avance.
-
----
-
-**Objectif du template :** fournir un socle cohérent, compréhensible et maintenable pour démarrer rapidement des projets Django + React, tout en permettant à chaque projet d'évoluer selon ses besoins propres.
+| **Lecteur** | Voir les releases |
+| **Auteur** | Lecteur + créer et modifier ses brouillons, soumettre |
+| **Approbateur** | Lecteur + approuver ou refuser |
+| **Exécutant** | Lecteur + (plus tard) planifier et lancer |
+
+Utilise le mécanisme de **permissions personnalisées** de Django (`Meta.permissions`, par exemple `approuver_release`) plutôt que de tester des noms de groupes dans le code. On teste « a-t-il la permission ? », pas « est-il dans le groupe ? ». C'est plus propre et plus flexible.
+
+## 7. Les écrans et l'API
+
+**Admin Django** (rapide, sert de back-office) :
+- Environnements et bases cibles gérés ici.
+- Releases avec leurs scripts en *inline*.
+- Filtres par statut et par environnement.
+
+**Pages personnalisées** (minimum) :
+- Liste des releases avec filtres (statut, environnement).
+- Détail d'une release : informations, scripts dans l'ordre, boutons d'action visibles seulement si l'utilisateur y a droit.
+- Création et édition d'un brouillon.
+- Connexion et déconnexion.
+
+**API REST (DRF)**, volontairement réduite :
+- `GET /api/releases/` et `GET /api/releases/{id}/`
+- `POST /api/releases/{id}/soumettre/`, `/approuver/`, `/refuser/`
+- Authentification par session au départ, avec les mêmes permissions que l'interface.
+
+## 8. Tests à écrire
+
+Pas besoin de couverture totale, mais ces cas-là doivent exister :
+
+- Un auteur ne peut pas approuver sa propre release.
+- Impossible de soumettre une release sans script.
+- Impossible de modifier un script après soumission.
+- Un lecteur ne peut pas soumettre ni approuver.
+- Une transition invalide est refusée.
+- Le hash d'un script change quand son contenu change.
+
+## 9. Déroulé sur 2 jours
+
+**Jour 1 : fondations**
+1. Dépôt Git, environnement virtuel, projet Django, `requirements.txt`, `.gitignore`, `.env.example`.
+2. Modèles + migrations.
+3. Admin configuré (inlines, filtres).
+4. Groupes et permissions créés automatiquement.
+5. Jeu de données d'exemple (une commande qui crée environnements, une base cible et une release).
+
+**Jour 2 : logique et accès**
+1. `services.py` avec les transitions et leurs règles.
+2. Tests de ces règles.
+3. Vues liste, détail, création, avec contrôle des permissions.
+4. API DRF réduite.
+5. README (comment lancer, schéma des modèles, workflow) et commit propre.
+
+## 10. Critères de réussite
+
+Tu as terminé la phase 1 quand :
+
+- [ ] Je peux lancer le projet en suivant ton README seul.
+- [ ] Je peux me connecter avec trois comptes (auteur, approbateur, lecteur) et voir des droits différents.
+- [ ] Je peux créer une release avec trois scripts ordonnés, la soumettre, la faire approuver par un autre compte.
+- [ ] L'auteur ne peut pas approuver sa release, et c'est testé.
+- [ ] L'API renvoie les releases et applique les mêmes règles.
+- [ ] Le `chemin_secret` est stocké, pas un mot de passe.
+- [ ] Les tests passent.
+
+## 11. Ce que tu laisses de côté volontairement
+
+Pas d'exécution de SQL, pas de planification, pas de Vault, pas de design soigné, pas de déploiement. Les phases suivantes s'en occupent, et vouloir tout faire maintenant te ferait perdre du temps. Savoir délimiter un périmètre est aussi une compétence que Keyes verra d'un bon œil.

@@ -1,294 +1,198 @@
-# Modular Monolith Django Architecture
-
-**A reusable full-stack starter template built with Django, Django REST Framework, React, TypeScript, and Vite.**
+# Release Manager
 
 [Lire la documentation en français](README.fr.md)
+[Lire la documentation de l'architecture](https://github.com/Y0UBdev/Modular-Monolith-Django-Architecture/blob/main/README.md)
 
-## Overview
+## 1. What you're building
 
-This repository provides a structured foundation for building full-stack web applications. It separates the Django backend from the React frontend while keeping the backend organized into modular Django applications.
+An internal web application where users with **different roles** prepare **releases** (bundles of ordered SQL scripts) intended for a **target database**, and push them through an **approval workflow**.
 
-The goal is to reduce setup time, encourage maintainable code, and provide a consistent structure for future projects.
+At the end of phase 1, the application **cannot yet execute** the scripts (that's phase 3). It can, however:
 
-## Tech Stack
+- store environments, target databases, releases and their scripts;
+- enforce a workflow (draft → submitted → approved);
+- restrict each action according to the user's role;
+- expose releases through a REST API.
 
-### Backend
-- **Python** — Backend programming language.
-- **Django** — Web framework and ORM.
-- **Django REST Framework (DRF)** — REST API development, serialization, validation, and permissions.
-- **SQLite / PostgreSQL** — Database options, depending on the project configuration.
+It's the skeleton everything else will plug into.
 
-### Frontend
-- **React** — UI library.
-- **TypeScript** — Static typing.
-- **Vite** — Development server and build tool.
-- **ESLint** — Code quality and linting.
+## 2. Initial technical choices
 
-## Project Structure
+| Item | Choice | Why |
+|---|---|---|
+| Python | 3.12 or later, in a virtual environment (`venv`) | Standard |
+| Django | Latest LTS version (5.2) | Stability, it's what a company would choose |
+| API | Django REST Framework | Mentioned in the job posting (REST API) |
+| Database for now | SQLite | Zero setup. Oracle comes in phase 2 |
+| Configuration | Environment variables (`django-environ`) | A habit to build from the start: no secrets in the code |
+| Tests | `pytest-django` or Django's `TestCase` | A tool that deploys SQL scripts has to be tested |
+| Git | Repository from day one, `.gitignore`, clear commits | Git is in the posting's technology list |
 
-```text
-.
-├── apps/
-│   └── <app_name>/
-│       ├── migrations/
-│       ├── tests/
-│       ├── admin.py
-│       ├── apps.py
-│       ├── models.py
-│       ├── queries.py
-│       ├── serializers.py
-│       ├── services.py
-│       ├── urls.py
-│       └── views.py
-├── common/
-├── config/
-│   ├── settings/
-│   │   ├── base.py
-│   │   ├── development.py
-│   │   ├── production.py
-│   │   └── test.py
-│   ├── asgi.py
-│   ├── urls.py
-│   └── wsgi.py
-├── docs/
-├── requirements/
-│   ├── base.txt
-│   ├── development.txt
-│   └── production.txt
-├── scripts/
-├── web/
-│   ├── public/
-│   └── src/
-│       ├── assets/
-│       ├── components/
-│       ├── hooks/
-│       ├── types/
-│       └── main.tsx
+**Warning:** SQLite only backs *your application*. The Oracle database will be the **target** of the scripts, a very different role. Understanding this distinction is important.
+
+## 3. Project structure
+
+```
+release_manager/
+├── manage.py
+├── config/                  # settings, urls, wsgi
+├── releases/                # the business core
+│   ├── models.py
+│   ├── services.py          # workflow logic (transitions)
+│   ├── permissions.py       # permission and group names
+│   ├── views.py
+│   ├── forms.py
+│   ├── admin.py
+│   ├── api/
+│   │   ├── serializers.py
+│   │   └── views.py
+│   ├── templates/releases/
+│   └── tests/
 ├── .env.example
 ├── .gitignore
-├── manage.py
+├── requirements.txt
 └── README.md
 ```
 
-## Architecture
+A single business app is enough for now. You'll add another one for auditing in phase 6.
 
-The project follows a **modular monolith architecture with a layered organization**.
+## 4. Data models
 
-Each Django application represents a specific business domain and contains the code related to that domain. The frontend is maintained separately in the `web/` directory.
+### `Environnement` (Environment)
+| Field | Type | Note |
+|---|---|---|
+| `code` | CharField, unique | `TEST`, `ACC`, `PROD` |
+| `nom` | CharField | |
+| `approbation_requise` | BooleanField | True for production |
+| `ordre` | PositiveInteger | For sorting: test, then acceptance, then production |
 
-### Backend responsibilities
+### `BaseCible` (Target database)
+| Field | Type | Note |
+|---|---|---|
+| `nom` | CharField | Readable name |
+| `environnement` | ForeignKey | |
+| `type_sgbd` | CharField with choices | Only one value for now: `ORACLE`. This field prepares for supporting other DBMSs |
+| `dsn` | CharField | Address / service name |
+| `chemin_secret` | CharField | **The path of the secret in Vault, never the password.** Prepares phase 5 |
+| `active` | BooleanField | |
 
-| File | Responsibility |
+### `Release`
+| Field | Type | Note |
+|---|---|---|
+| `titre` | CharField | |
+| `description` | TextField | |
+| `base_cible` | ForeignKey | |
+| `auteur` | ForeignKey to `User` | |
+| `statut` | CharField with choices | See workflow below |
+| `approuvee_par` | ForeignKey to `User`, nullable | |
+| `approuvee_le` | DateTimeField, nullable | |
+| `planifiee_le` | DateTimeField, nullable | Will be used in phase 4 |
+| `cree_le` / `modifie_le` | Automatic DateTimeFields | |
+
+### `Script`
+| Field | Type | Note |
+|---|---|---|
+| `release` | ForeignKey | |
+| `ordre` | PositiveInteger | Unique per release (`unique_together` or `UniqueConstraint`) |
+| `nom` | CharField | E.g. `001_create_table_facture.sql` |
+| `contenu` | TextField | The SQL |
+| `contenu_retour_arriere` | TextField, blank allowed | The rollback script, written in advance |
+| `hash_contenu` | CharField | SHA-256 of the content, computed on save. Later used to prove what was executed |
+
+The `Execution` model (status, start, end, output, error per script) comes in phase 3. Don't create it now.
+
+## 5. The workflow to implement
+
+**Statuses:** `BROUILLON` (draft) → `SOUMISE` (submitted) → `APPROUVEE` (approved), with two possible exits: `REFUSEE` (rejected) and `ANNULEE` (cancelled). The later statuses (`PLANIFIEE`, `EN_COURS`, `TERMINEE`, `ECHEC`) will be added in phases 3 and 4. You can declare them in the choices now if you like, but don't implement their transitions.
+
+| Action | From | To | Who can do it |
+|---|---|---|---|
+| Submit | Draft | Submitted | The release's author |
+| Approve | Submitted | Approved | An approver, **different from the author** |
+| Reject | Submitted | Rejected | An approver |
+| Cancel | Draft, Submitted | Cancelled | The author |
+| Edit scripts | Draft only | , | The author |
+
+**Business rules to code and test:**
+
+1. **Separation of duties**: nobody approves their own release. It's a classic audit rule, and it will go over very well in an interview.
+2. **A submitted or approved release can no longer be edited.** Otherwise someone could get a script approved and then change its content.
+3. **A release with no scripts cannot be submitted.**
+4. **Invalid transitions raise a clear error** (for example, approving a draft).
+5. Environments with `approbation_requise = False` could allow a shortcut: decide on it and document it.
+
+**Good practice to adopt:** put the logic in functions in `services.py` (for example `soumettre(release, utilisateur)`), not in the views. The views, the admin and the API will all call the same functions. It's *Single Responsibility* in practice, and it's easy to test.
+
+## 6. Roles and permissions
+
+Four Django groups, created by a data migration or a management command:
+
+| Group | Can |
 |---|---|
-| `models.py` | Defines database models and relationships using the Django ORM. |
-| `queries.py` | Groups reusable or complex database read operations. |
-| `services.py` | Implements business operations and use cases. |
-| `serializers.py` | Handles API data serialization, deserialization, and input validation. |
-| `views.py` | Handles HTTP requests and returns API responses. |
-| `urls.py` | Maps URL patterns to views. |
-| `admin.py` | Configures Django admin interfaces. |
-| `apps.py` | Defines the Django application configuration. |
-| `migrations/` | Stores database schema migrations. |
-| `tests/` | Contains automated tests. |
-
-### Design principles
-
-- **Separation of concerns:** each module has a clearly defined responsibility.
-- **Modularity:** business domains are separated into Django applications.
-- **Reusability:** shared code belongs in `common/` when it is genuinely used across domains.
-- **Maintainability:** business logic should not accumulate inside views.
-- **Testability:** queries and business operations can be tested independently where appropriate.
-
-This structure is inspired by layered architecture and Clean Architecture principles, without enforcing a strict Clean Architecture implementation.
-
-## Prerequisites
-
-Make sure you have the following installed:
-
-- Python 3.12 or another version supported by the project's dependencies.
-- Node.js and npm.
-- Git.
-
-Check your installed versions:
-
-```bash
-python --version
-node --version
-npm --version
-git --version
-```
-
-## Getting Started
-
-### 1. Create a repository from this template
-
-On GitHub, open this repository and select **Use this template → Create a new repository**.
-
-Alternatively, clone the repository directly:
-
-```bash
-git clone https://github.com/OWNER/REPOSITORY.git
-cd REPOSITORY
-```
-
-Replace `OWNER/REPOSITORY` with the actual repository path.
-
-### 2. Set up the backend
-
-Create and activate a Python virtual environment from the project root.
-
-**Windows — PowerShell**
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-**Linux / macOS**
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Install the dependencies:
-
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements/development.txt
-```
-
-Make sure `requirements/development.txt` includes the base requirements, for example:
-
-```text
--r base.txt
-```
-
-### 3. Configure environment variables
-
-Copy `.env.example` to `.env` and fill in the required values.
-
-**Windows — PowerShell**
-
-```powershell
-Copy-Item .env.example .env
-```
-
-**Linux / macOS**
-
-```bash
-cp .env.example .env
-```
-
-Keep secrets, passwords, and production credentials out of version control.
-
-**Important:** Django does not load `.env` files automatically. Ensure the project is configured to load them using the chosen environment-variable library or another explicit configuration mechanism.
-
-### 4. Run database migrations
-
-```bash
-python manage.py migrate
-```
-
-Create an administrator account if needed:
-
-```bash
-python manage.py createsuperuser
-```
-
-### 5. Start the backend
-
-```bash
-python manage.py runserver
-```
-
-The development server is available at:
-
-- Backend: `http://127.0.0.1:8000/`
-- Django admin: `http://127.0.0.1:8000/admin/`
-
-The actual API endpoints depend on the URL configuration of the project.
-
-### 6. Set up the frontend
-
-Open a second terminal:
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Vite will display the local frontend URL in the terminal, usually `http://localhost:5173/`.
-
-## Creating a Django Application
-
-Create a new application inside `apps/`:
-
-```bash
-python manage.py startapp projects apps/projects
-```
-
-Then:
-
-1. Ensure `apps/` is a Python package by adding `apps/__init__.py` if necessary.
-2. Check `apps/projects/apps.py` and configure the correct `AppConfig` name, such as `apps.projects`.
-3. Register the application in the appropriate Django settings module.
-4. Add models, queries, services, serializers, views, URLs, and tests as needed.
-5. Include the application URLs in `config/urls.py`.
-
-For example:
-
-```python
-from django.urls import include, path
-
-urlpatterns = [
-    path("api/projects/", include("apps.projects.urls")),
-]
-```
-
-Adapt the URL prefix to the API design of your project.
-
-## Testing
-
-Run the Django test suite:
-
-```bash
-python manage.py test
-```
-
-Tests can be organized by responsibility, for example:
-
-- `test_models.py` — model behavior and constraints.
-- `test_queries.py` — database read operations.
-- `test_services.py` — business rules and use cases.
-
-For the frontend, configure and run the test framework selected for the project.
-
-## Production Considerations
-
-Before deploying an application:
-
-- Set `DEBUG = False`.
-- Configure `ALLOWED_HOSTS`.
-- Store secrets in environment variables or a dedicated secrets manager.
-- Use a production-ready database, such as PostgreSQL, when appropriate.
-- Configure static files and media storage.
-- Configure HTTPS and secure cookies.
-- Run Django's deployment checks:
-
-```bash
-python manage.py check --deploy
-```
-
-- Build the frontend:
-
-```bash
-cd web
-npm run build
-```
-
-The production deployment strategy must define how the frontend build is served and how API requests are routed to Django.
-
----
-**Documentation:** [English](README.md) · [Français](README.fr.md)
+| **Reader** (Lecteur) | View releases |
+| **Author** (Auteur) | Reader + create and edit own drafts, submit |
+| **Approver** (Approbateur) | Reader + approve or reject |
+| **Executor** (Exécutant) | Reader + (later) schedule and launch |
+
+Use Django's **custom permissions** mechanism (`Meta.permissions`, for example `approuver_release`) rather than testing group names in the code. You check "does the user have the permission?", not "are they in the group?". It's cleaner and more flexible.
+
+## 7. Screens and API
+
+**Django admin** (quick, serves as a back office):
+- Environments and target databases managed here.
+- Releases with their scripts as *inlines*.
+- Filters by status and by environment.
+
+**Custom pages** (minimum):
+- Release list with filters (status, environment).
+- Release detail: information, scripts in order, action buttons visible only if the user has the right to use them.
+- Draft creation and editing.
+- Login and logout.
+
+**REST API (DRF)**, deliberately minimal:
+- `GET /api/releases/` and `GET /api/releases/{id}/`
+- `POST /api/releases/{id}/soumettre/`, `/approuver/`, `/refuser/`
+- Session authentication to start with, with the same permissions as the interface.
+
+## 8. Tests to write
+
+You don't need full coverage, but these cases must exist:
+
+- An author cannot approve their own release.
+- A release with no scripts cannot be submitted.
+- A script cannot be edited after submission.
+- A reader cannot submit or approve.
+- An invalid transition is refused.
+- A script's hash changes when its content changes.
+
+## 9. Two-day schedule
+
+**Day 1: foundations**
+1. Git repository, virtual environment, Django project, `requirements.txt`, `.gitignore`, `.env.example`.
+2. Models + migrations.
+3. Configured admin (inlines, filters).
+4. Groups and permissions created automatically.
+5. Sample dataset (a command that creates environments, a target database and a release).
+
+**Day 2: logic and access**
+1. `services.py` with the transitions and their rules.
+2. Tests for those rules.
+3. List, detail and creation views, with permission checks.
+4. Minimal DRF API.
+5. README (how to run, model diagram, workflow) and a clean commit.
+
+## 10. Success criteria
+
+You've finished phase 1 when:
+
+- [ ] I can run the project by following your README alone.
+- [ ] I can log in with three accounts (author, approver, reader) and see different rights.
+- [ ] I can create a release with three ordered scripts, submit it, and have another account approve it.
+- [ ] The author cannot approve their own release, and it's tested.
+- [ ] The API returns the releases and applies the same rules.
+- [ ] The `chemin_secret` is stored, not a password.
+- [ ] The tests pass.
+
+## 11. What you deliberately leave out
+
+No SQL execution, no scheduling, no Vault, no polished design, no deployment. The following phases cover those, and trying to do everything now would waste your time. Knowing how to define a scope is also a skill Keyes will appreciate.
