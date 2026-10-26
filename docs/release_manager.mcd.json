@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "enums": [],
+  "entities": [
+    {
+      "id": "e-0admlo",
+      "name": "Release",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "auto": true},
+        {"name": "titre", "type": "string"},
+        {"name": "approved_on", "type": "datetime"},
+        {"name": "scheduled_for", "type": "datetime"},
+        {"name": "create_at", "type": "datetime"},
+        {"name": "update_on", "type": "datetime"}
+      ]
+    },
+    {
+      "id": "e-2we2vz",
+      "name": "DataBase",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "auto": true},
+        {"name": "name", "type": "string"},
+        {"name": "type_sgbd", "type": "string"},
+        {"name": "dsn", "type": "string"},
+        {"name": "secret_path", "type": "string"},
+        {"name": "active", "type": "string"}
+      ]
+    },
+    {
+      "id": "e-eg0r54",
+      "name": "Environment",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "auto": true},
+        {"name": "code", "type": "string"},
+        {"name": "name", "type": "string"},
+        {"name": "order", "type": "int"}
+      ]
+    },
+    {
+      "id": "e-emdjhd",
+      "name": "User",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "auto": true},
+        {"name": "name", "type": "string"},
+        {"name": "password", "type": "string"}
+      ]
+    },
+    {
+      "id": "e-ny4x92",
+      "name": "Role",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "auto": true},
+        {"name": "role", "type": "string"}
+      ]
+    },
+    {
+      "id": "e-rk3jfa",
+      "name": "Status",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "unique": true, "auto": true},
+        {"name": "status", "type": "string", "unique": true}
+      ]
+    },
+    {
+      "id": "e-vvwety",
+      "name": "Script",
+      "attributes": [
+        {"name": "id", "type": "int", "id": true, "auto": true},
+        {"name": "order", "type": "int"},
+        {"name": "name", "type": "string"},
+        {"name": "sql_file", "type": "string"},
+        {"name": "sql_back_file", "type": "string"},
+        {"name": "hash_content", "type": "string"}
+      ]
+    }
+  ],
+  "associations": [
+    {
+      "id": "a-17vnvt",
+      "name": "to target",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-0admlo", "card": "1,n"},
+        {"entity": "e-2we2vz", "card": "1,n"}
+      ]
+    },
+    {
+      "id": "a-218v6w",
+      "name": "to create",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-0admlo", "card": "1,1"},
+        {"entity": "e-emdjhd", "card": "1,n", "note": "Author"}
+      ]
+    },
+    {
+      "id": "a-9ppnw4",
+      "name": "to have",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-vvwety", "card": "1,1"},
+        {"entity": "e-0admlo", "card": "1,n"}
+      ]
+    },
+    {
+      "id": "a-ajlfxi",
+      "name": "to rule",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-0admlo", "card": "1,1"},
+        {"entity": "e-rk3jfa", "card": "1,n"}
+      ]
+    },
+    {
+      "id": "a-h390x6",
+      "name": "to approve",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-0admlo", "card": "1,1"},
+        {"entity": "e-emdjhd", "card": "1,n", "note": "Approver"}
+      ]
+    },
+    {
+      "id": "a-v0tsyk",
+      "name": "to assign",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-ny4x92", "card": "1,n"},
+        {"entity": "e-emdjhd", "card": "1,1"}
+      ]
+    },
+    {
+      "id": "a-ywlwji",
+      "name": "relation",
+      "attributes": [],
+      "legs": [
+        {"entity": "e-2we2vz", "card": "1,1"},
+        {"entity": "e-eg0r54", "card": "1,n"}
+      ]
+    }
+  ],
+  "notes": [
+    {"id": "n-eathlw", "text": "Order : Test = 1 > Preprod = 2 > Prod = 3", "size": [230, 70]},
+    {"id": "n-l39m5u", "text": "Roles : \n- Reader\t\n- Author\n- Approver\n- Executor"},
+    {"id": "n-vnhlit", "text": "Status : \n- Submit\t\n- Approve\n- Reject\n- Cancel\n- Edit Scripts"}
+  ],
+  "arrows": [],
+  "layout": {
+    "a-17vnvt": [140, 110],
+    "a-218v6w": [620, 130],
+    "a-9ppnw4": [380, 250],
+    "a-ajlfxi": [380, -40],
+    "a-h390x6": [610, 60],
+    "a-v0tsyk": [880, 0],
+    "a-ywlwji": [-250, 120],
+    "e-0admlo": [310, 40],
+    "e-2we2vz": [-100, 50],
+    "e-eg0r54": [-430, 80],
+    "e-emdjhd": [850, 70],
+    "e-ny4x92": [870, -120],
+    "e-rk3jfa": [350, -160],
+    "e-vvwety": [320, 340],
+    "n-eathlw": [-430, 0],
+    "n-l39m5u": [1010, -120],
+    "n-vnhlit": [510, -160]
+  }
+}
