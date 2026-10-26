@@ -29,6 +29,7 @@ db.sqlite3-*
 /staticfiles/
 local_settings.py
 local_settings_*.py
+.devdbrc
 
 # Environment variables and secrets
 .env

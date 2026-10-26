@@ -12,6 +12,7 @@ class Environment(models.Model):
   
   class Meta:
     ordering = ["order"]
+    db_table = "Environment"
   
   def __str__(self):
     return self.code
@@ -25,6 +26,9 @@ class DatabaseTarget(models.Model):
   active      = models.BooleanField(default=True),
   
   environment = models.ForeignKey(Environment, on_delete=models.PROTECT, related_name="database")
+  
+  class Meta:
+    db_table = "DatabaseTarget"
   
   def __str__(self):
     return self.name
@@ -50,7 +54,7 @@ class Release(models.Model):
     APPROVED  = "APPROVED" , "Approved"
     REJECTED  = "REJECTED" , "Rejected"
     CANCELLED = "CANCELLED", "Cancelled"
-  
+    
   status = models.CharField(
     max_length = 20,
     choices    = Status.choices,
@@ -59,6 +63,7 @@ class Release(models.Model):
   )
 
   class Meta:
+    db_table = "Release"
     permissions = [
       ("approve_release", "Can approve a release"),
       ("submit_release", "Can submit a release for approval"),
@@ -79,6 +84,9 @@ class Script(models.Model):
   content_hash  = models.CharField(max_length=64, editable=False, null=True)
   
   release = models.ForeignKey(Release, on_delete=models.PROTECT, related_name="scripts")
+
+  class Meta:
+    db_table = "Script"
 
   def __str__(self):
     return self.name
